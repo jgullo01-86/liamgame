@@ -66,6 +66,24 @@ TERRAIN_MOVEMENT_COSTS = {
 # Unit settings
 DEFAULT_MOVEMENT_POINTS = 2
 
+# Combat settings
+TERRAIN_DEFENSE_BONUS = {
+    'hills': 0.25,
+    'forest': 0.50,
+    'mountains': 0.75,
+}
+COMBAT_RANDOMNESS = 0.2  # +/- 20% random factor
+
+# Victory settings
+MAX_TURNS = 100  # Score victory after this many turns
+SCORE_PER_POPULATION = 10
+SCORE_PER_CITY = 50
+SCORE_PER_UNIT = 5
+SCORE_PER_GOLD = 0.1
+
+# AI settings
+AI_PLAYER_COUNT = 1  # Number of AI opponents
+
 # UI settings
 TOP_BAR_HEIGHT = 40
 BOTTOM_BAR_HEIGHT = 80

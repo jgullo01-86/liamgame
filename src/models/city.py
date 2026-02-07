@@ -16,6 +16,9 @@ class ProductionType(Enum):
     """Types of things a city can produce."""
     WARRIOR = 'warrior'
     SETTLER = 'settler'
+    SCOUT = 'scout'
+    ARCHER = 'archer'
+    HORSEMAN = 'horseman'
 
 
 @dataclass
@@ -33,7 +36,25 @@ PRODUCTION_ITEMS: Dict[ProductionType, ProductionItem] = {
         type=ProductionType.WARRIOR,
         name="Warrior",
         cost=40,
-        description="Basic military unit. Strength 8."
+        description="Melee fighter. Strength 8."
+    ),
+    ProductionType.SCOUT: ProductionItem(
+        type=ProductionType.SCOUT,
+        name="Scout",
+        cost=25,
+        description="Fast explorer. Strength 5, 3 moves."
+    ),
+    ProductionType.ARCHER: ProductionItem(
+        type=ProductionType.ARCHER,
+        name="Archer",
+        cost=50,
+        description="Ranged attacker. Strength 6, range 2."
+    ),
+    ProductionType.HORSEMAN: ProductionItem(
+        type=ProductionType.HORSEMAN,
+        name="Horseman",
+        cost=60,
+        description="Fast cavalry. Strength 7, 4 moves."
     ),
     ProductionType.SETTLER: ProductionItem(
         type=ProductionType.SETTLER,
@@ -98,6 +119,7 @@ class City:
     position: HexCoord
     owner_id: int = 0
     population: int = 1
+    is_capital: bool = False
 
     # Resources
     stored_food: int = 0

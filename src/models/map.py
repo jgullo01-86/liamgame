@@ -276,14 +276,26 @@ class GameMap:
             if t.is_passable and t.terrain not in (TerrainType.OCEAN, TerrainType.COAST)
         ]
         if land_tiles:
-            # Prefer tiles near the center
             center_q = self.width // 2
             center_r = self.height // 2 - center_q // 2
             center = HexCoord(center_q, center_r)
-
-            # Sort by distance to center and pick from the closest ones
             land_tiles.sort(key=lambda t: abs(t.coord.q - center.q) + abs(t.coord.r - center.r))
             return random.choice(land_tiles[:max(1, len(land_tiles) // 4)]).coord
+        return None
+
+    def find_spawn_location_far_from(self, avoid: HexCoord) -> Optional[HexCoord]:
+        """Find a spawn location far from the given coordinate."""
+        from src.utils.hex_utils import hex_distance
+        land_tiles = [
+            t for t in self.tiles.values()
+            if t.is_passable and t.terrain not in (TerrainType.OCEAN, TerrainType.COAST)
+        ]
+        if land_tiles:
+            # Sort by distance from avoid point (farthest first)
+            land_tiles.sort(key=lambda t: hex_distance(t.coord, avoid), reverse=True)
+            # Pick from the farthest quarter
+            far_tiles = land_tiles[:max(1, len(land_tiles) // 4)]
+            return random.choice(far_tiles).coord
         return None
 
     def __iter__(self):

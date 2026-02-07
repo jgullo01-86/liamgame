@@ -1,25 +1,28 @@
 """
-Unit model for game units (warriors, settlers, etc.)
+Unit model for game units (warriors, settlers, scouts, archers, horsemen).
 """
 
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Set, TYPE_CHECKING
 from enum import Enum
 import heapq
+import random
 
 from src.utils.hex_utils import HexCoord, hex_neighbors, hex_distance
 
 if TYPE_CHECKING:
     from src.models.map import GameMap, Tile
 
-from config import DEFAULT_MOVEMENT_POINTS
+from config import DEFAULT_MOVEMENT_POINTS, TERRAIN_DEFENSE_BONUS, COMBAT_RANDOMNESS
 
 
 class UnitType(Enum):
     """Types of units in the game."""
     WARRIOR = 'warrior'
-    SETTLER = 'settler'  # For Phase 2
-    SCOUT = 'scout'      # Future
+    SETTLER = 'settler'
+    SCOUT = 'scout'
+    ARCHER = 'archer'
+    HORSEMAN = 'horseman'
 
 
 @dataclass
@@ -28,8 +31,9 @@ class UnitStats:
     name: str
     movement_points: int
     strength: int
-    icon: str  # Character to display
-    can_found_city: bool = False  # Whether this unit can found cities
+    icon: str
+    can_found_city: bool = False
+    attack_range: int = 1  # 1 = melee, 2+ = ranged
 
 
 # Unit type definitions
@@ -53,6 +57,19 @@ UNIT_STATS: Dict[UnitType, UnitStats] = {
         strength=5,
         icon="!"
     ),
+    UnitType.ARCHER: UnitStats(
+        name="Archer",
+        movement_points=2,
+        strength=6,
+        icon="A",
+        attack_range=2
+    ),
+    UnitType.HORSEMAN: UnitStats(
+        name="Horseman",
+        movement_points=4,
+        strength=7,
+        icon="H"
+    ),
 }
 
 
@@ -62,7 +79,7 @@ class Unit:
     id: int
     unit_type: UnitType
     position: HexCoord
-    owner_id: int = 0  # Player ID (0 = player 1)
+    owner_id: int = 0
     movement_remaining: float = field(default=0.0)
     health: int = 100
     is_selected: bool = False
@@ -74,7 +91,6 @@ class Unit:
 
     @property
     def stats(self) -> UnitStats:
-        """Get the stats for this unit type."""
         return UNIT_STATS[self.unit_type]
 
     @property
@@ -94,33 +110,91 @@ class Unit:
         return self.stats.icon
 
     @property
+    def attack_range(self) -> int:
+        return self.stats.attack_range
+
+    @property
     def can_move(self) -> bool:
-        """Check if unit has any movement remaining."""
         return self.movement_remaining > 0
 
     @property
     def can_found_city(self) -> bool:
-        """Check if this unit can found a city."""
         return self.stats.can_found_city
+
+    @property
+    def is_alive(self) -> bool:
+        return self.health > 0
 
     def start_turn(self):
         """Reset unit state at the start of a turn."""
         self.movement_remaining = self.max_movement
+        # Heal 10 HP per turn if not at full health
+        if self.health < 100:
+            self.health = min(100, self.health + 10)
 
     def end_turn(self):
         """Handle end of turn for this unit."""
-        pass  # Future: healing, fortification bonuses, etc.
+        pass
+
+    def attack(self, defender: 'Unit', game_map: 'GameMap') -> dict:
+        """
+        Attack another unit. Returns combat result dict.
+        """
+        if self.strength <= 0:
+            return {'damage': 0, 'killed': False}
+
+        # Base damage
+        rand_factor = 1.0 + random.uniform(-COMBAT_RANDOMNESS, COMBAT_RANDOMNESS)
+        base_damage = self.strength * rand_factor
+
+        # Defender terrain bonus
+        defender_tile = game_map.get_tile(defender.position)
+        defense_bonus = 0.0
+        if defender_tile:
+            defense_bonus = TERRAIN_DEFENSE_BONUS.get(defender_tile.terrain.value, 0.0)
+
+        # Health modifier (weaker units do less damage)
+        attacker_health_mod = self.health / 100.0
+        defender_health_mod = defender.health / 100.0
+
+        # Calculate damage
+        effective_defense = defender.strength * (1 + defense_bonus) * defender_health_mod * 0.5
+        damage = max(1, int(base_damage * attacker_health_mod - effective_defense))
+
+        # Apply damage
+        defender.health -= damage
+        killed = defender.health <= 0
+
+        # Attacker takes counter-damage (reduced) for melee attacks
+        if self.attack_range <= 1 and defender.strength > 0 and not killed:
+            counter_rand = 1.0 + random.uniform(-COMBAT_RANDOMNESS, COMBAT_RANDOMNESS)
+            counter_damage = max(1, int(defender.strength * counter_rand * defender_health_mod * 0.3))
+            self.health -= counter_damage
+
+        # Use all remaining movement
+        self.movement_remaining = 0
+
+        return {
+            'damage': damage,
+            'killed': killed,
+            'attacker_alive': self.health > 0,
+        }
+
+    def can_attack_at(self, target_coord: HexCoord) -> bool:
+        """Check if this unit can attack a target at the given coordinate."""
+        if self.strength <= 0 or not self.can_move:
+            return False
+        dist = hex_distance(self.position, target_coord)
+        return dist <= self.attack_range
 
     def get_movement_range(self, game_map: 'GameMap') -> Dict[HexCoord, float]:
         """
         Calculate all tiles this unit can move to with current movement points.
-        Returns dict mapping coordinates to the movement cost to reach them.
-        Uses Dijkstra's algorithm for pathfinding.
+        Uses Dijkstra's algorithm.
         """
         if not self.can_move:
             return {}
 
-        # Priority queue: (cost, coord)
         frontier = [(0.0, self.position)]
         costs: Dict[HexCoord, float] = {self.position: 0.0}
 
@@ -130,7 +204,6 @@ class Unit:
             if current_cost > costs.get(current, float('inf')):
                 continue
 
-            # Check all neighbors
             for neighbor_tile in game_map.get_neighbors(current):
                 if not neighbor_tile.is_passable:
                     continue
@@ -138,34 +211,25 @@ class Unit:
                 move_cost = neighbor_tile.movement_cost
                 new_cost = current_cost + move_cost
 
-                # Only include if we can reach it with remaining movement
                 if new_cost <= self.movement_remaining:
                     if neighbor_tile.coord not in costs or new_cost < costs[neighbor_tile.coord]:
                         costs[neighbor_tile.coord] = new_cost
                         heapq.heappush(frontier, (new_cost, neighbor_tile.coord))
 
-        # Remove starting position from results
         if self.position in costs:
             del costs[self.position]
 
         return costs
 
     def get_path_to(self, target: HexCoord, game_map: 'GameMap') -> Optional[List[HexCoord]]:
-        """
-        Find the shortest path to the target tile.
-        Returns None if no path exists or target is out of range.
-        """
+        """Find shortest path to target."""
         movement_range = self.get_movement_range(game_map)
-
         if target not in movement_range:
             return None
-
-        # Reconstruct path using A* for efficiency
-        # (though our map is small enough that it doesn't matter much)
         return self._find_path(self.position, target, game_map)
 
     def _find_path(self, start: HexCoord, end: HexCoord, game_map: 'GameMap') -> Optional[List[HexCoord]]:
-        """A* pathfinding from start to end."""
+        """A* pathfinding."""
         frontier = [(0, start)]
         came_from: Dict[HexCoord, Optional[HexCoord]] = {start: None}
         cost_so_far: Dict[HexCoord, float] = {start: 0}
@@ -188,7 +252,6 @@ class Unit:
                     heapq.heappush(frontier, (priority, neighbor_tile.coord))
                     came_from[neighbor_tile.coord] = current
 
-        # Reconstruct path
         if end not in came_from:
             return None
 
@@ -199,18 +262,13 @@ class Unit:
             current = came_from[current]
 
         path.reverse()
-        return path[1:]  # Exclude starting position
+        return path[1:]
 
     def move_to(self, target: HexCoord, game_map: 'GameMap') -> bool:
-        """
-        Move unit to target position.
-        Returns True if move was successful.
-        """
+        """Move unit to target position."""
         movement_range = self.get_movement_range(game_map)
-
         if target not in movement_range:
             return False
-
         cost = movement_range[target]
         self.movement_remaining -= cost
         self.position = target
