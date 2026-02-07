@@ -1,0 +1,229 @@
+{
+    "civilizations": {
+        "egypt": {
+            "name": "Egypt",
+            "adjective": "Egyptian",
+            "leader": "Cleopatra",
+            "colors": {
+                "primary": [255, 215, 0],
+                "secondary": [0, 100, 150]
+            },
+            "city_names": [
+                "Thebes", "Memphis", "Alexandria", "Heliopolis", "Giza",
+                "Luxor", "Karnak", "Abydos", "Elephantine", "Edfu",
+                "Amarna", "Tanis", "Sais", "Avaris", "Pi-Ramesses"
+            ],
+            "abilities": {}
+        },
+        "rome": {
+            "name": "Rome",
+            "adjective": "Roman",
+            "leader": "Julius Caesar",
+            "colors": {
+                "primary": [139, 0, 0],
+                "secondary": [255, 215, 0]
+            },
+            "city_names": [
+                "Rome", "Antium", "Cumae", "Neapolis", "Ravenna",
+                "Arretium", "Mediolanum", "Arpinum", "Circei", "Setia",
+                "Satricum", "Ardea", "Ostia", "Velitrae", "Viroconium"
+            ],
+            "abilities": {}
+        },
+        "greece": {
+            "name": "Greece",
+            "adjective": "Greek",
+            "leader": "Alexander",
+            "colors": {
+                "primary": [0, 105, 180],
+                "secondary": [255, 255, 255]
+            },
+            "city_names": [
+                "Athens", "Sparta", "Corinth", "Argos", "Knossos",
+                "Mycenae", "Pharsalos", "Ephesus", "Halicarnassus", "Rhodes",
+                "Eretria", "Pergamon", "Miletos", "Megara", "Phocaea"
+            ],
+            "abilities": {}
+        },
+        "china": {
+            "name": "China",
+            "adjective": "Chinese",
+            "leader": "Qin Shi Huang",
+            "colors": {
+                "primary": [200, 50, 50],
+                "secondary": [255, 200, 50]
+            },
+            "city_names": [
+                "Beijing", "Shanghai", "Guangzhou", "Nanjing", "Xian",
+                "Chengdu", "Hangzhou", "Tianjin", "Macau", "Shandong",
+                "Kaifeng", "Ningbo", "Baoding", "Yangzhou", "Harbin"
+            ],
+            "abilities": {}
+        },
+        "england": {
+            "name": "England",
+            "adjective": "English",
+            "leader": "King George III",
+            "colors": {
+                "primary": [200, 50, 80],
+                "secondary": [255, 255, 255]
+            },
+            "city_names": [
+                "London", "York", "Nottingham", "Hastings", "Canterbury",
+                "Coventry", "Warwick", "Newcastle", "Oxford", "Liverpool",
+                "Dover", "Brighton", "Norwich", "Leeds", "Reading"
+            ],
+            "abilities": {}
+        },
+        "france": {
+            "name": "France",
+            "adjective": "French",
+            "leader": "Napoleon",
+            "colors": {
+                "primary": [0, 50, 150],
+                "secondary": [255, 255, 255]
+            },
+            "city_names": [
+                "Paris", "Orleans", "Lyon", "Bordeaux", "Marseille",
+                "Chartres", "Avignon", "Rouen", "Grenoble", "Dijon",
+                "Tours", "Toulouse", "Nice", "Reims", "Brest"
+            ],
+            "abilities": {}
+        },
+        "japan": {
+            "name": "Japan",
+            "adjective": "Japanese",
+            "leader": "Oda Nobunaga",
+            "colors": {
+                "primary": [255, 255, 255],
+                "secondary": [200, 50, 50]
+            },
+            "city_names": [
+                "Kyoto", "Osaka", "Tokyo", "Satsuma", "Kagoshima",
+                "Nara", "Nagoya", "Izumo", "Nagasaki", "Yokohama",
+                "Shimonoseki", "Matsuyama", "Sapporo", "Hakodate", "Ise"
+            ],
+            "abilities": {}
+        },
+        "persia": {
+            "name": "Persia",
+            "adjective": "Persian",
+            "leader": "Cyrus",
+            "colors": {
+                "primary": [150, 50, 150],
+                "secondary": [255, 215, 0]
+            },
+            "city_names": [
+                "Persepolis", "Pasargadae", "Susa", "Ecbatana", "Tarsus",
+                "Gordium", "Bactra", "Sardis", "Ergili", "Dariush Kabir",
+                "Ghulaman", "Zranka", "Arbela", "Gabae", "Taxila"
+            ],
+            "abilities": {}
+        },
+        "mongolia": {
+            "name": "Mongolia",
+            "adjective": "Mongolian",
+            "leader": "Genghis Khan",
+            "colors": {
+                "primary": [100, 50, 20],
+                "secondary": [200, 150, 50]
+            },
+            "city_names": [
+                "Karakorum", "Ulaanbaatar", "Sarai", "Tabriz", "Tiflis",
+                "Otrar", "Sanchu", "Kazan", "Almarikh", "Samarkand",
+                "Bukhara", "Urgench", "Merv", "Nishapur", "Herat"
+            ],
+            "abilities": {}
+        },
+        "aztec": {
+            "name": "Aztec",
+            "adjective": "Aztec",
+            "leader": "Montezuma",
+            "colors": {
+                "primary": [50, 150, 100],
+                "secondary": [200, 50, 50]
+            },
+            "city_names": [
+                "Tenochtitlan", "Teotihuacan", "Tlatelolco", "Texcoco", "Tlaxcala",
+                "Calixtlahuaca", "Xochicalco", "Tlacopan", "Atzcapotzalco", "Tzintzuntzan",
+                "Malinalco", "Tula", "Tamuin", "Teayo", "Cempoala"
+            ],
+            "abilities": {}
+        },
+        "america": {
+            "name": "America",
+            "adjective": "American",
+            "leader": "Abraham Lincoln",
+            "colors": {
+                "primary": [0, 50, 120],
+                "secondary": [200, 50, 50]
+            },
+            "city_names": [
+                "Washington", "New York", "Boston", "Philadelphia", "Atlanta",
+                "Chicago", "Seattle", "Los Angeles", "Houston", "San Francisco",
+                "Cincinnati", "Miami", "St. Louis", "Detroit", "New Orleans"
+            ],
+            "abilities": {}
+        },
+        "india": {
+            "name": "India",
+            "adjective": "Indian",
+            "leader": "Gandhi",
+            "colors": {
+                "primary": [255, 150, 50],
+                "secondary": [0, 100, 50]
+            },
+            "city_names": [
+                "Delhi", "Bombay", "Madras", "Bangalore", "Calcutta",
+                "Lahore", "Karachi", "Kolhapur", "Jaipur", "Hyderabad",
+                "Bengal", "Chittagong", "Punjab", "Dacca", "Indus"
+            ],
+            "abilities": {}
+        },
+        "zulu": {
+            "name": "Zulu",
+            "adjective": "Zulu",
+            "leader": "Shaka",
+            "colors": {
+                "primary": [50, 50, 50],
+                "secondary": [200, 50, 50]
+            },
+            "city_names": [
+                "Ulundi", "Umgungundlovu", "Nobamba", "Bulawayo", "Kwadukuza",
+                "Nongoma", "Ondini", "Nodwengu", "Ndondakusuka", "Isandlwana",
+                "Eshowe", "Rorkes Drift", "Ntombe", "Hlobane", "Khambula"
+            ],
+            "abilities": {}
+        },
+        "russia": {
+            "name": "Russia",
+            "adjective": "Russian",
+            "leader": "Peter the Great",
+            "colors": {
+                "primary": [50, 100, 150],
+                "secondary": [255, 215, 0]
+            },
+            "city_names": [
+                "Moscow", "St. Petersburg", "Novgorod", "Rostov", "Yaroslavl",
+                "Yekaterinburg", "Yakutsk", "Vladivostok", "Smolensk", "Orenburg",
+                "Krasnoyarsk", "Kamchatka", "Magadan", "Murmansk", "Irkutsk"
+            ],
+            "abilities": {}
+        },
+        "brazil": {
+            "name": "Brazil",
+            "adjective": "Brazilian",
+            "leader": "Pedro II",
+            "colors": {
+                "primary": [0, 150, 50],
+                "secondary": [255, 215, 0]
+            },
+            "city_names": [
+                "Rio de Janeiro", "Sao Paulo", "Salvador", "Brasilia", "Fortaleza",
+                "Belo Horizonte", "Curitiba", "Recife", "Porto Alegre", "Manaus",
+                "Belem", "Goiania", "Guarulhos", "Campinas", "Natal"
+            ],
+            "abilities": {}
+        }
+    }
+}

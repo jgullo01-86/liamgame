@@ -1,0 +1,76 @@
+{
+    "terrain_types": {
+        "grassland": {
+            "name": "Grassland",
+            "movement_cost": 1,
+            "food_yield": 2,
+            "production_yield": 0,
+            "gold_yield": 0,
+            "description": "Fertile plains ideal for farming"
+        },
+        "plains": {
+            "name": "Plains",
+            "movement_cost": 1,
+            "food_yield": 1,
+            "production_yield": 1,
+            "gold_yield": 0,
+            "description": "Open terrain with moderate yields"
+        },
+        "desert": {
+            "name": "Desert",
+            "movement_cost": 1,
+            "food_yield": 0,
+            "production_yield": 0,
+            "gold_yield": 1,
+            "description": "Harsh terrain with limited resources"
+        },
+        "hills": {
+            "name": "Hills",
+            "movement_cost": 2,
+            "food_yield": 0,
+            "production_yield": 2,
+            "gold_yield": 0,
+            "description": "Elevated terrain good for production"
+        },
+        "mountains": {
+            "name": "Mountains",
+            "movement_cost": null,
+            "food_yield": 0,
+            "production_yield": 0,
+            "gold_yield": 0,
+            "description": "Impassable peaks"
+        },
+        "forest": {
+            "name": "Forest",
+            "movement_cost": 2,
+            "food_yield": 1,
+            "production_yield": 1,
+            "gold_yield": 0,
+            "description": "Dense woodland providing food and lumber"
+        },
+        "coast": {
+            "name": "Coast",
+            "movement_cost": 1,
+            "food_yield": 1,
+            "production_yield": 0,
+            "gold_yield": 1,
+            "description": "Shallow waters with fish and trade"
+        },
+        "ocean": {
+            "name": "Ocean",
+            "movement_cost": null,
+            "food_yield": 1,
+            "production_yield": 0,
+            "gold_yield": 0,
+            "description": "Deep waters requiring naval units"
+        }
+    },
+    "generation_params": {
+        "elevation_scale": 0.08,
+        "moisture_scale": 0.06,
+        "ocean_threshold": 0.35,
+        "coast_threshold": 0.4,
+        "mountain_threshold": 0.75,
+        "hill_threshold": 0.6
+    }
+}
