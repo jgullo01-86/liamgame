@@ -128,9 +128,9 @@ class Unit:
     def start_turn(self):
         """Reset unit state at the start of a turn."""
         self.movement_remaining = self.max_movement
-        # Heal 10 HP per turn if not at full health
+        # Heal 5 HP per turn if not at full health
         if self.health < 100:
-            self.health = min(100, self.health + 10)
+            self.health = min(100, self.health + 5)
 
     def end_turn(self):
         """Handle end of turn for this unit."""
@@ -157,18 +157,18 @@ class Unit:
         attacker_health_mod = self.health / 100.0
         defender_health_mod = defender.health / 100.0
 
-        # Calculate damage
-        effective_defense = defender.strength * (1 + defense_bonus) * defender_health_mod * 0.5
-        damage = max(1, int(base_damage * attacker_health_mod - effective_defense))
+        # Calculate damage — combat should be decisive, not a tickle fight
+        effective_defense = defender.strength * (1 + defense_bonus) * defender_health_mod * 0.3
+        damage = max(5, int(base_damage * attacker_health_mod - effective_defense))
 
         # Apply damage
         defender.health -= damage
         killed = defender.health <= 0
 
-        # Attacker takes counter-damage (reduced) for melee attacks
+        # Attacker takes counter-damage for melee attacks (combat is dangerous!)
         if self.attack_range <= 1 and defender.strength > 0 and not killed:
             counter_rand = 1.0 + random.uniform(-COMBAT_RANDOMNESS, COMBAT_RANDOMNESS)
-            counter_damage = max(1, int(defender.strength * counter_rand * defender_health_mod * 0.3))
+            counter_damage = max(3, int(defender.strength * counter_rand * defender_health_mod * 0.5))
             self.health -= counter_damage
 
         # Use all remaining movement

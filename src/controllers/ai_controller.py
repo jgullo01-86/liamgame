@@ -11,7 +11,7 @@ from src.utils.hex_utils import HexCoord, hex_distance
 
 
 class AIController:
-    """Simple AI that manages units and cities for non-human players."""
+    """AI that manages units and cities for non-human players."""
 
     def __init__(self, game_state):
         self.game_state = game_state
@@ -23,53 +23,63 @@ class AIController:
         # Process cities first (set production)
         self._manage_cities(player_id)
 
-        # Then move units
-        self._move_units(player_id)
+        # Then move units (settlers first so they found cities ASAP)
+        units = list(gs.get_player_units(player_id))
+        settlers = [u for u in units if u.unit_type == UnitType.SETTLER and u.can_move]
+        military = [u for u in units if u.unit_type != UnitType.SETTLER and u.can_move]
+
+        for unit in settlers:
+            self._move_settler(unit)
+
+        for unit in military:
+            # Re-check can_move in case unit was removed during another's combat
+            if unit.id in gs.units and unit.can_move:
+                self._move_military(unit)
 
     def _manage_cities(self, player_id: int):
-        """Set production for cities that aren't building anything."""
+        """Actively manage city production each turn."""
         gs = self.game_state
         cities = gs.get_player_cities(player_id)
         units = gs.get_player_units(player_id)
 
-        num_military = sum(1 for u in units if u.unit_type != UnitType.SETTLER)
+        num_military = sum(1 for u in units if u.unit_type not in (UnitType.SETTLER, UnitType.SCOUT))
         num_settlers = sum(1 for u in units if u.unit_type == UnitType.SETTLER)
+        # Expand early: get 2nd city after first warrior, 3rd city later
+        need_settler = num_settlers == 0 and (
+            (len(cities) < 2 and num_military >= 1) or
+            (len(cities) < 3 and num_military >= 3)
+        )
 
         for city in cities:
-            if city.current_production is not None:
-                continue
-
-            # Build settlers if we have few cities and no settlers
-            if len(cities) < 3 and num_settlers == 0:
+            # Decide what this city should build
+            if need_settler and city.current_production != ProductionType.SETTLER:
+                # Switch one city to settler production
                 city.set_production(ProductionType.SETTLER)
-            # Build military if we have fewer than 2 per city
-            elif num_military < len(cities) * 2:
-                # Vary unit types
-                choices = [ProductionType.WARRIOR, ProductionType.WARRIOR,
-                           ProductionType.ARCHER, ProductionType.HORSEMAN]
-                city.set_production(random.choice(choices))
-            else:
-                city.set_production(ProductionType.WARRIOR)
+                need_settler = False
+            elif not need_settler and city.current_production == ProductionType.SETTLER:
+                # Don't need settler anymore — switch to military
+                self._set_military_production(city, num_military, len(cities))
+            elif city.current_production is None:
+                # City is idle — build military
+                self._set_military_production(city, num_military, len(cities))
+            # Otherwise keep building what we're building
 
-    def _move_units(self, player_id: int):
-        """Move all units for this player."""
-        gs = self.game_state
-        units = list(gs.get_player_units(player_id))
-
-        for unit in units:
-            if not unit.can_move:
-                continue
-
-            if unit.unit_type == UnitType.SETTLER:
-                self._move_settler(unit)
-            else:
-                self._move_military(unit)
+    def _set_military_production(self, city, num_military: int, num_cities: int):
+        """Pick a military unit to produce."""
+        choices = [
+            ProductionType.WARRIOR,
+            ProductionType.WARRIOR,
+            ProductionType.ARCHER,
+            ProductionType.ARCHER,
+            ProductionType.HORSEMAN,
+        ]
+        city.set_production(random.choice(choices))
 
     def _move_settler(self, unit: Unit):
         """Move settler toward a good city location and found city."""
         gs = self.game_state
 
-        # Try to found city at current location
+        # Try to found city at current location first
         can_found, _ = gs.can_found_city_at(unit.position)
         if can_found:
             player = gs.get_player(unit.owner_id)
@@ -79,18 +89,27 @@ class AIController:
             gs.complete_found_city(name)
             return
 
-        # Move toward unclaimed land far from existing cities
+        # Move toward best city location in range
         movement_range = unit.get_movement_range(gs.game_map)
         if not movement_range:
             return
 
         best_coord = None
-        best_score = -1
+        best_score = -999
 
         for coord in movement_range:
-            # Score: distance from nearest city (prefer far from cities)
             if gs.get_unit_at(coord):
                 continue
+
+            # Can we found a city here?
+            can_found, _ = gs.can_found_city_at(coord)
+            if can_found:
+                # Great spot — found immediately if we can get there
+                best_coord = coord
+                best_score = 1000
+                break
+
+            # Otherwise score by distance from nearest city (prefer moderate distance)
             min_city_dist = 999
             for city in gs.cities.values():
                 d = hex_distance(coord, city.position)
@@ -103,6 +122,14 @@ class AIController:
 
         if best_coord:
             unit.move_to(best_coord, gs.game_map)
+            # After moving, try to found city at new position
+            can_found, _ = gs.can_found_city_at(unit.position)
+            if can_found:
+                player = gs.get_player(unit.owner_id)
+                name = player.get_next_city_name() if player else "AI City"
+                gs.pending_city_location = unit.position
+                gs.pending_city_settler_id = unit.id
+                gs.complete_found_city(name)
 
     def _move_military(self, unit: Unit):
         """Move military unit toward nearest enemy or explore."""
@@ -124,8 +151,9 @@ class AIController:
             if enemy_city.owner_id == unit.owner_id:
                 continue
             d = hex_distance(unit.position, enemy_city.position)
-            if d < nearest_dist:
-                nearest_dist = d
+            # Prioritize cities slightly (worth attacking)
+            if d - 1 < nearest_dist:
+                nearest_dist = d - 1
                 nearest_enemy = enemy_city.position
 
         # Try to attack adjacent enemy
@@ -153,9 +181,20 @@ class AIController:
 
             if best_coord:
                 unit.move_to(best_coord, gs.game_map)
+                # After moving, try to attack if now in range
+                if unit.id in gs.units and unit.can_move and nearest_enemy:
+                    if unit.can_attack_at(nearest_enemy):
+                        enemy_at = gs.get_unit_at(nearest_enemy)
+                        if enemy_at and enemy_at.owner_id != unit.owner_id:
+                            gs.attack_unit(unit.id, nearest_enemy)
                 return
 
-        # No enemy found — explore randomly
+        # No enemy found — explore toward center or random
         valid_moves = [c for c in movement_range if not gs.get_unit_at(c)]
         if valid_moves:
-            unit.move_to(random.choice(valid_moves), gs.game_map)
+            # Bias toward map center for exploration
+            center = HexCoord(20, 15)
+            valid_moves.sort(key=lambda c: hex_distance(c, center))
+            # Pick from top 3 closest to center with some randomness
+            choices = valid_moves[:min(3, len(valid_moves))]
+            unit.move_to(random.choice(choices), gs.game_map)

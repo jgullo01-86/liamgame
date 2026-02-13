@@ -72,7 +72,7 @@ TERRAIN_DEFENSE_BONUS = {
     'forest': 0.50,
     'mountains': 0.75,
 }
-COMBAT_RANDOMNESS = 0.2  # +/- 20% random factor
+COMBAT_RANDOMNESS = 0.3  # +/- 30% random factor
 
 # Victory settings
 MAX_TURNS = 100  # Score victory after this many turns
@@ -96,36 +96,39 @@ BUTTON_HEIGHT = 30
 
 # 3D Hex settings
 HEX_3D_SIZE = 3.0  # Base size in world units (increased for visibility)
-HEX_3D_HEIGHT = 0.5  # Base prism height
+HEX_3D_HEIGHT = 0.08  # Very thin prism — flat tiles like Call to Power
 
-# Terrain heights (Y-axis offset from base)
+# Terrain heights (Y-axis offset from base) — nearly flat, slight variation
 TERRAIN_HEIGHTS = {
-    'ocean': -0.3,
-    'coast': -0.1,
+    'ocean': -0.08,
+    'coast': -0.04,
     'grassland': 0.0,
     'plains': 0.0,
     'desert': 0.0,
     'forest': 0.0,
-    'hills': 0.3,
-    'mountains': 0.6,  # Base height, peaks can be up to 0.9
+    'hills': 0.06,
+    'mountains': 0.12,
 }
 
-# Terrain 3D colors (RGB 0-255) - brighter for visibility
+# Terrain 3D colors (RGB 0-255) - bright, saturated strategy game palette
 TERRAIN_COLORS_3D = {
-    'grassland': (100, 180, 80),    # Bright green
-    'plains': (200, 180, 100),      # Tan/wheat
-    'desert': (230, 210, 150),      # Sandy yellow
-    'hills': (160, 140, 100),       # Brown
-    'mountains': (140, 135, 130),   # Gray
-    'forest': (60, 120, 60),        # Dark green
-    'coast': (120, 200, 240),       # Light blue
-    'ocean': (70, 130, 200),        # Deep blue
+    'grassland': (110, 185, 70),      # Bright green
+    'plains': (205, 185, 105),        # Golden wheat
+    'desert': (230, 205, 140),        # Warm sand
+    'hills': (160, 140, 100),         # Earthy brown
+    'mountains': (155, 145, 135),     # Warm gray
+    'forest': (55, 140, 55),          # Forest green (brighter)
+    'coast': (75, 160, 210),          # Tropical blue
+    'ocean': (45, 95, 170),           # Rich blue
 }
 
 # 3D Camera settings
-CAMERA_3D_DISTANCE = 20  # Closer default view
-CAMERA_3D_ANGLE = 55  # Steeper angle to see map better
-CAMERA_3D_ZOOM_MIN = 8
-CAMERA_3D_ZOOM_MAX = 60
+CAMERA_3D_DISTANCE = 35  # Default FOV in ortho mode (lower = more zoomed in)
+CAMERA_3D_ANGLE = 55  # Isometric angle (degrees from horizontal)
+CAMERA_3D_ZOOM_MIN = 10  # Min FOV (most zoomed in)
+CAMERA_3D_ZOOM_MAX = 80  # Max FOV (most zoomed out)
 CAMERA_3D_PAN_SPEED = 0.5
 CAMERA_3D_ROTATE_SPEED = 100
+CAMERA_3D_EDGE_SCROLL_MARGIN = 0.02
+CAMERA_3D_EDGE_SCROLL_SPEED = 0.3
+CAMERA_3D_MIDDLE_PAN_SENSITIVITY = 50.0

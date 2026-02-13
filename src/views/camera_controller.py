@@ -2,7 +2,7 @@
 Orbital camera controller for 3D view.
 """
 
-from ursina import camera, mouse, held_keys, Vec3, time
+from ursina import camera, mouse, held_keys, Vec3, time, window
 import math
 import sys
 import os
@@ -12,7 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from config import (
     CAMERA_3D_DISTANCE, CAMERA_3D_ANGLE,
     CAMERA_3D_ZOOM_MIN, CAMERA_3D_ZOOM_MAX,
-    CAMERA_3D_PAN_SPEED, CAMERA_3D_ROTATE_SPEED
+    CAMERA_3D_PAN_SPEED, CAMERA_3D_ROTATE_SPEED,
+    CAMERA_3D_EDGE_SCROLL_MARGIN, CAMERA_3D_EDGE_SCROLL_SPEED,
+    CAMERA_3D_MIDDLE_PAN_SENSITIVITY
 )
 
 
@@ -43,7 +45,19 @@ class OrbitCamera:
 
         # Input state
         self._last_mouse_pos = None
+        self._middle_drag_active = False
+        self._middle_last_pos = None
 
+        self._update_camera_position()
+
+    def reset(self):
+        """Reset camera angle and zoom to defaults (preserves map position)."""
+        self.distance = CAMERA_3D_DISTANCE
+        self.angle_horizontal = 0.0
+        self.angle_vertical = CAMERA_3D_ANGLE
+        self._smooth_distance = self.distance
+        self._smooth_angle_h = self.angle_horizontal
+        self._smooth_angle_v = self.angle_vertical
         self._update_camera_position()
 
     def set_target(self, x: float, z: float):
@@ -53,6 +67,18 @@ class OrbitCamera:
         self._smooth_target_x = x
         self._smooth_target_z = z
         self._update_camera_position()
+
+    def get_target(self):
+        """Return current camera target (x, z)."""
+        return (self.target_x, self.target_z)
+
+    def get_viewport_size(self):
+        """Return approximate world-space (width, height) visible in ortho mode."""
+        fov = self._smooth_distance
+        aspect = window.aspect_ratio if window.aspect_ratio else 1.78
+        v_rad = math.radians(self._smooth_angle_v)
+        # In ortho, fov is vertical extent; ground plane projection stretches by 1/sin(angle)
+        return (fov * aspect, fov / max(math.sin(v_rad), 0.3))
 
     def update(self):
         """Update camera each frame."""
@@ -103,6 +129,18 @@ class OrbitCamera:
         else:
             self._last_mouse_pos = None
 
+        # Middle mouse button panning
+        if self._middle_drag_active:
+            if self._middle_last_pos is not None:
+                dx = mouse.x - self._middle_last_pos[0]
+                dy = mouse.y - self._middle_last_pos[1]
+
+                pan_factor = CAMERA_3D_MIDDLE_PAN_SENSITIVITY * self.distance * 0.01
+                self.target_x -= (right_x * dx + forward_x * dy) * pan_factor
+                self.target_z -= (right_z * dx + forward_z * dy) * pan_factor
+
+            self._middle_last_pos = (mouse.x, mouse.y)
+
         # Smooth interpolation
         smooth_factor = min(1.0, dt * 10)
         self._smooth_target_x += (self.target_x - self._smooth_target_x) * smooth_factor
@@ -114,14 +152,19 @@ class OrbitCamera:
         self._update_camera_position()
 
     def _update_camera_position(self):
-        """Update camera position and rotation."""
+        """Update camera position and rotation — orthographic isometric view."""
+        # Orthographic projection for flat 2D look (like Call to Power)
+        camera.orthographic = True
+        camera.fov = self._smooth_distance  # fov controls zoom in ortho mode
+
         # Calculate camera position in orbit
         h_rad = math.radians(self._smooth_angle_h)
         v_rad = math.radians(self._smooth_angle_v)
 
-        # Position relative to target
-        y = math.sin(v_rad) * self._smooth_distance
-        horizontal_dist = math.cos(v_rad) * self._smooth_distance
+        # Position relative to target (far enough to see everything)
+        orbit_dist = 100
+        y = math.sin(v_rad) * orbit_dist
+        horizontal_dist = math.cos(v_rad) * orbit_dist
 
         x = self._smooth_target_x - math.sin(h_rad) * horizontal_dist
         z = self._smooth_target_z - math.cos(h_rad) * horizontal_dist
@@ -131,6 +174,14 @@ class OrbitCamera:
 
     def input(self, key):
         """Handle discrete input events."""
+        # Middle mouse button tracking
+        if key == 'middle mouse down':
+            self._middle_drag_active = True
+            self._middle_last_pos = (mouse.x, mouse.y)
+        elif key == 'middle mouse up':
+            self._middle_drag_active = False
+            self._middle_last_pos = None
+
         # Scroll wheel
         if key == 'scroll up':
             self.distance *= 0.9

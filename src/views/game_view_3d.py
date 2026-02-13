@@ -6,6 +6,7 @@ from ursina import Entity, mouse, color, load_texture
 from ursina.models.procedural.cone import Cone
 from ursina.models.procedural.cylinder import Cylinder
 from typing import Dict, Optional, Set
+import math
 import random
 import sys
 import os
@@ -16,6 +17,20 @@ from src.models.game_state import GameState
 from src.views.hex_mesh import HexTile3D
 from src.utils.hex_utils import HexCoord, hex_to_world_3d
 from config import HEX_3D_SIZE, TERRAIN_HEIGHTS
+
+
+def _color_entity(entity, c):
+    """Apply color via Panda3D set_color for Ursina 7 compatibility."""
+    if hasattr(c, 'r'):
+        r, g, b = c.r, c.g, c.b
+        a = getattr(c, 'a', 1)
+        # Ursina color.rgb() stores 0-255 values, Panda3D set_color needs 0-1
+        if r > 1 or g > 1 or b > 1:
+            r, g, b = r / 255, g / 255, b / 255
+        if a > 1:
+            a = a / 255
+        entity.set_color(r, g, b, a)
+    return entity
 
 
 class GameView3D:
@@ -46,6 +61,8 @@ class GameView3D:
         self._decorations = []
         self._map_built = False
         self._textures = {}
+        self._frame_count = 0
+        self._water_tiles: list = []
 
     def _load_textures(self):
         """Load terrain textures."""
@@ -80,118 +97,68 @@ class GameView3D:
             # Add terrain decorations
             self._add_terrain_decorations(tile, hex_tile)
 
+        # Cache water tile coords for efficient shimmer updates
+        self._water_tiles = [
+            coord for coord, tile in self.hex_tiles.items()
+            if tile.terrain_type in ('ocean', 'coast')
+        ]
+
         self._map_built = True
-        print(f"Built {len(self.hex_tiles)} hex tiles")
+        print(f"Built {len(self.hex_tiles)} hex tiles ({len(self._water_tiles)} water)")
+
+    def _add_decoration(self, entity):
+        """Add a decoration entity (lighting enabled for 3D depth)."""
+        self._decorations.append(entity)
 
     def _add_terrain_decorations(self, tile, hex_tile: HexTile3D):
-        """Add 3D terrain features on top of hex tiles."""
+        """Add minimal 3D features — textures handle most terrain visuals."""
         terrain = tile.terrain.value
         x, _, z = hex_to_world_3d(tile.coord, HEX_3D_SIZE, 0)
         h = hex_tile.terrain_height
 
+        # Mountains: add a subtle peak cone for 3D effect
         if terrain == 'mountains':
-            # Snow peak
             peak = Entity(
                 model=self._get_cone_mesh(),
-                color=color.white,
-                position=(x, h + 2.0, z),
-                scale=(HEX_3D_SIZE * 0.4, 3.5, HEX_3D_SIZE * 0.4)
+                position=(x, h + 0.8, z),
+                scale=(HEX_3D_SIZE * 0.3, 1.5, HEX_3D_SIZE * 0.3)
             )
-            self._decorations.append(peak)
-            # Rocky base
-            base = Entity(
-                model=self._get_cone_mesh(),
-                color=color.rgb(120, 110, 100),
-                position=(x, h + 0.3, z),
-                scale=(HEX_3D_SIZE * 0.7, 2.0, HEX_3D_SIZE * 0.7)
-            )
-            self._decorations.append(base)
-            # Scattered rocks
-            for _ in range(3):
-                rx = x + random.uniform(-1.5, 1.5)
-                rz = z + random.uniform(-1.5, 1.5)
-                s = random.uniform(0.2, 0.5)
-                rock = Entity(model='sphere', color=color.gray,
-                              position=(rx, h + 0.2, rz), scale=(s, s * 0.6, s))
-                self._decorations.append(rock)
+            _color_entity(peak, color.rgb(160, 155, 145))
+            self._add_decoration(peak)
 
-        elif terrain == 'hills':
-            hill = Entity(
-                model='sphere',
-                color=color.rgb(160, 140, 100),
-                position=(x, h + 0.3, z),
-                scale=(HEX_3D_SIZE * 0.6, 1.2, HEX_3D_SIZE * 0.6)
-            )
-            self._decorations.append(hill)
-            for _ in range(2):
-                rx = x + random.uniform(-1, 1)
-                rz = z + random.uniform(-1, 1)
-                rock = Entity(model='sphere', color=color.gray,
-                              position=(rx, h + 0.5, rz), scale=(0.25, 0.2, 0.25))
-                self._decorations.append(rock)
-
+        # Forest: add a couple small canopy bumps for subtle 3D depth
         elif terrain == 'forest':
-            offsets = [
-                (random.uniform(-1.2, -0.6), random.uniform(-1.2, -0.6)),
-                (random.uniform(0.6, 1.2), random.uniform(-1.2, -0.6)),
-                (random.uniform(-1.2, -0.6), random.uniform(0.6, 1.2)),
-                (random.uniform(0.6, 1.2), random.uniform(0.6, 1.2)),
-                (random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3)),
-            ]
-            for dx, dz in offsets:
-                tree_h = random.uniform(1.5, 2.5)
-                trunk_h = random.uniform(0.4, 0.7)
-                trunk = Entity(model=self._get_cylinder_mesh(), color=color.rgb(100, 70, 40),
-                               position=(x + dx, h + trunk_h / 2, z + dz),
-                               scale=(0.12, trunk_h, 0.12))
-                foliage = Entity(model=self._get_cone_mesh(), color=color.rgb(30, 120, 30),
-                                 position=(x + dx, h + trunk_h + tree_h * 0.4, z + dz),
-                                 scale=(0.7, tree_h, 0.7))
-                foliage2 = Entity(model=self._get_cone_mesh(), color=color.rgb(50, 150, 50),
-                                  position=(x + dx, h + trunk_h + tree_h * 0.25, z + dz),
-                                  scale=(0.9, tree_h * 0.65, 0.9))
-                self._decorations.extend([trunk, foliage, foliage2])
-
-        elif terrain == 'grassland':
-            for _ in range(4):
-                gx = x + random.uniform(-2, 2)
-                gz = z + random.uniform(-2, 2)
-                gh = random.uniform(0.15, 0.3)
-                tuft = Entity(model='cube', color=color.rgb(120, 200, 100),
-                              position=(gx, h + gh / 2 + 0.05, gz),
-                              scale=(0.04, gh, 0.12),
-                              rotation=(0, random.uniform(0, 360), 0))
-                self._decorations.append(tuft)
-
-        elif terrain == 'desert':
-            if random.random() < 0.3:
-                cx = x + random.uniform(-1, 1)
-                cz = z + random.uniform(-1, 1)
-                ch = random.uniform(0.6, 1.2)
-                cactus = Entity(model=self._get_cylinder_mesh(), color=color.rgb(50, 140, 50),
-                                position=(cx, h + ch / 2 + 0.05, cz),
-                                scale=(0.15, ch, 0.15))
-                self._decorations.append(cactus)
-            if random.random() < 0.4:
-                rx = x + random.uniform(-1.5, 1.5)
-                rz = z + random.uniform(-1.5, 1.5)
-                rock = Entity(model='sphere', color=color.rgb(200, 180, 140),
-                              position=(rx, h + 0.1, rz),
-                              scale=(random.uniform(0.2, 0.4), 0.12, random.uniform(0.2, 0.4)))
-                self._decorations.append(rock)
-
-        elif terrain == 'coast':
-            if random.random() < 0.3:
-                sx = x + random.uniform(-1.5, 1.5)
-                sz = z + random.uniform(-1.5, 1.5)
-                shell = Entity(model='sphere', color=color.white,
-                               position=(sx, h + 0.05, sz), scale=(0.08, 0.04, 0.08))
-                self._decorations.append(shell)
+            for _ in range(2):
+                fx = x + random.uniform(-1.2, 1.2)
+                fz = z + random.uniform(-1.2, 1.2)
+                canopy = Entity(
+                    model='sphere',
+                    position=(fx, h + 0.3, fz),
+                    scale=(random.uniform(0.6, 1.0), 0.4, random.uniform(0.6, 1.0))
+                )
+                _color_entity(canopy, color.rgb(random.randint(40, 70), random.randint(120, 160), random.randint(30, 50)))
+                self._add_decoration(canopy)
 
     def update(self):
         """Called every frame by Ursina."""
         self._update_hover()
         self._update_movement_range()
+        self._update_water_shimmer()
+
+    def _update_water_shimmer(self):
+        """Apply a subtle brightness ripple to water tiles."""
+        self._frame_count += 1
+        if self._frame_count % 10 != 0:
+            return
+
+        for coord in self._water_tiles:
+            tile = self.hex_tiles[coord]
+            # Skip tiles that have an active overlay (highlight, movement, attack)
+            if tile._is_highlighted or tile._is_in_movement_range or tile._is_attack_target:
+                continue
+            phase = coord.q * 0.3 + coord.r * 0.5
+            brightness = 1.0 + 0.1 * math.sin(self._frame_count * 0.05 + phase)
+            tile.setColorScale(brightness, brightness, brightness + 0.05, 1)
 
     def _update_hover(self):
         """Update hovered tile highlight."""

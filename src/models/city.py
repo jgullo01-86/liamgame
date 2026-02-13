@@ -35,31 +35,31 @@ PRODUCTION_ITEMS: Dict[ProductionType, ProductionItem] = {
     ProductionType.WARRIOR: ProductionItem(
         type=ProductionType.WARRIOR,
         name="Warrior",
-        cost=40,
+        cost=25,
         description="Melee fighter. Strength 8."
     ),
     ProductionType.SCOUT: ProductionItem(
         type=ProductionType.SCOUT,
         name="Scout",
-        cost=25,
+        cost=15,
         description="Fast explorer. Strength 5, 3 moves."
     ),
     ProductionType.ARCHER: ProductionItem(
         type=ProductionType.ARCHER,
         name="Archer",
-        cost=50,
+        cost=35,
         description="Ranged attacker. Strength 6, range 2."
     ),
     ProductionType.HORSEMAN: ProductionItem(
         type=ProductionType.HORSEMAN,
         name="Horseman",
-        cost=60,
+        cost=40,
         description="Fast cavalry. Strength 7, 4 moves."
     ),
     ProductionType.SETTLER: ProductionItem(
         type=ProductionType.SETTLER,
         name="Settler",
-        cost=80,
+        cost=60,
         description="Founds new cities. Cannot attack."
     ),
 }
@@ -104,7 +104,7 @@ TERRAIN_YIELDS: Dict[str, CityYields] = {
 # Growth thresholds by population
 def get_growth_threshold(population: int) -> int:
     """Calculate food needed to grow to next population level."""
-    return 15 + (population - 1) * 8  # 15, 23, 31, 39, ...
+    return 10 + (population - 1) * 5  # 10, 15, 20, 25, ...
 
 
 # Food consumed per population per turn
@@ -125,8 +125,8 @@ class City:
     stored_food: int = 0
     stored_production: int = 0
 
-    # Production
-    current_production: Optional[ProductionType] = None
+    # Production (defaults to Warrior so cities are never idle)
+    current_production: Optional[ProductionType] = field(default_factory=lambda: ProductionType.WARRIOR)
 
     # Worked tiles (automatically selected)
     worked_tiles: Set[HexCoord] = field(default_factory=set)
@@ -155,7 +155,8 @@ class City:
 
     def calculate_yields(self, game_map: 'GameMap') -> CityYields:
         """Calculate total yields from all worked tiles."""
-        total = CityYields()
+        # City center always provides a base yield
+        total = CityYields(food=2, production=3, gold=1, science=0)
 
         for coord in self.worked_tiles:
             tile = game_map.get_tile(coord)
@@ -255,7 +256,7 @@ class City:
             if item and self.stored_production >= item.cost:
                 self.stored_production -= item.cost
                 events['production_complete'] = self.current_production
-                self.current_production = None
+                # Keep building the same thing (auto-repeat)
 
         return events
 

@@ -93,8 +93,8 @@ class Tile:
     terrain: TerrainType
     elevation: float = 0.0
     moisture: float = 0.0
-    explored: bool = True  # For fog of war (Phase 2+)
-    visible: bool = True   # Currently visible
+    explored: bool = False  # Fog of war — explored by nearby units
+    visible: bool = True    # Currently visible
 
     @property
     def movement_cost(self) -> Optional[int]:

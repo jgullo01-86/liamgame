@@ -1,31 +1,16 @@
 """
 3D unit and city rendering for Ursina.
 Uses hex_to_world_3d for proper hex grid positioning.
+Units and cities rendered as billboard sprites.
 """
 
-from ursina import Entity, Text, color, Vec3
-from ursina.models.procedural.cone import Cone
-from ursina.models.procedural.cylinder import Cylinder
+from ursina import Entity, Text, color, Vec3, load_texture, Color
 
-# Shared meshes (created once)
-_cone_mesh = None
-_cylinder_mesh = None
-
-def _get_cone():
-    global _cone_mesh
-    if _cone_mesh is None:
-        _cone_mesh = Cone()
-    return _cone_mesh
-
-def _get_cylinder():
-    global _cylinder_mesh
-    if _cylinder_mesh is None:
-        _cylinder_mesh = Cylinder()
-    return _cylinder_mesh
-from typing import Dict, Optional, List
+from typing import Dict, List
 import sys
 import os
-import random
+import math
+import time as _time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -33,6 +18,21 @@ from src.models.unit import Unit, UnitType
 from src.models.city import City
 from src.utils.hex_utils import HexCoord, hex_to_world_3d
 from config import HEX_3D_SIZE, TERRAIN_HEIGHTS
+
+
+def _color_entity(entity, c):
+    """Apply color via Panda3D set_color for Ursina 7 compatibility."""
+    if hasattr(c, 'r'):
+        r, g, b = c.r, c.g, c.b
+        a = getattr(c, 'a', 1)
+        # Ursina color.rgb() stores 0-255 values, Panda3D set_color needs 0-1
+        if r > 1 or g > 1 or b > 1:
+            r, g, b = r / 255, g / 255, b / 255
+        if a > 1:
+            a = a / 255
+        entity.set_color(r, g, b, a)
+    return entity
+
 
 # Player colors
 PLAYER_COLORS = [
@@ -47,137 +47,105 @@ def get_player_color(owner_id: int):
     return PLAYER_COLORS[owner_id % len(PLAYER_COLORS)]
 
 
-class Unit3D(Entity):
-    """3D unit with health bar and smooth movement."""
+# Sprite file mapping for each unit type (frame 1, frame 2 for walk animation)
+UNIT_SPRITES = {
+    UnitType.WARRIOR: ('assets/textures/units/warrior_1.png', 'assets/textures/units/warrior_2.png'),
+    UnitType.SETTLER: ('assets/textures/units/settler_1.png', 'assets/textures/units/settler_2.png'),
+    UnitType.SCOUT: ('assets/textures/units/scout_1.png', 'assets/textures/units/scout_2.png'),
+    UnitType.ARCHER: ('assets/textures/units/archer_1.png', 'assets/textures/units/archer_2.png'),
+    UnitType.HORSEMAN: ('assets/textures/units/horseman_1.png', 'assets/textures/units/horseman_2.png'),
+}
 
-    def __init__(self, unit: Unit, terrain_height: float, current_player_id: int, **kwargs):
+# City sprite mapping by population tier
+CITY_SPRITES = {
+    'village': 'assets/textures/cities/city_village.png',  # pop 1-2
+    'town': 'assets/textures/cities/city_town.png',        # pop 3-4
+    'city': 'assets/textures/cities/city_city.png',        # pop 5+
+}
+
+
+class Unit3D(Entity):
+    """3D unit rendered as a billboard sprite with health bar and smooth movement."""
+
+    # Class-level texture cache to avoid loading the same sprite multiple times
+    _sprite_cache = {}
+
+    @classmethod
+    def _get_sprite(cls, path):
+        if path not in cls._sprite_cache:
+            cls._sprite_cache[path] = load_texture(path)
+        return cls._sprite_cache[path]
+
+    def __init__(self, unit: Unit, terrain_height: float, current_player_id: int, civ_id: str = 'rome', **kwargs):
         self.unit = unit
         self._terrain_height = terrain_height
         self._current_player_id = current_player_id
-        self._parts: List[Entity] = []
+        self._civ_id = civ_id
 
         x, _, z = hex_to_world_3d(unit.position, HEX_3D_SIZE, 0)
         y = terrain_height + 0.5
 
         super().__init__(position=(x, y, z), **kwargs)
 
+        self._move_target = Vec3(x, y, z)
+        self._is_moving = False
+        self._anim_frame = 0
+        self._anim_timer = 0.0
+
         self._player_color = get_player_color(unit.owner_id)
-        self._base_color = self._player_color
         self._is_selected = False
 
-        # Build model
-        builders = {
-            UnitType.WARRIOR: self._build_warrior,
-            UnitType.SETTLER: self._build_settler,
-            UnitType.SCOUT: self._build_scout,
-            UnitType.ARCHER: self._build_archer,
-            UnitType.HORSEMAN: self._build_horseman,
-        }
-        builders.get(unit.unit_type, self._build_warrior)()
+        # Load sprite textures
+        sprites = UNIT_SPRITES.get(unit.unit_type, UNIT_SPRITES[UnitType.WARRIOR])
+        self._sprite_tex_1 = self._get_sprite(sprites[0])
+        self._sprite_tex_2 = self._get_sprite(sprites[1])
+
+        # Create billboard sprite quad
+        self._sprite = Entity(
+            parent=self,
+            model='quad',
+            texture=self._sprite_tex_1,
+            scale=(6.75, 6.75),
+            billboard=True,
+            position=(0, 3.0, 0),
+        )
+        self._sprite.setLightOff()
+        # Enable transparency for the sprite background
+        self._sprite.set_transparency(True)
+
+        # Player color base disk on ground
+        self._base_disk = Entity(
+            parent=self, model='circle',
+            scale=(1.5, 1.5, 1.5), rotation_x=90, position=(0, -0.4, 0)
+        )
+        _color_entity(self._base_disk, self._player_color)
+        self._base_disk.setLightOff()
 
         # Selection ring
         self._selection_ring = Entity(
-            parent=self, model='circle', color=color.yellow,
-            scale=(1.5, 1.5, 1.5), rotation_x=90, position=(0, -0.3, 0),
+            parent=self, model='circle',
+            scale=(1.8, 1.8, 1.8), rotation_x=90, position=(0, -0.35, 0),
             visible=False
         )
+        _color_entity(self._selection_ring, color.yellow)
+        self._selection_ring.setLightOff()
 
         # Health bar
         self._health_bg = Entity(
-            parent=self, model='cube', color=color.rgb(60, 60, 60),
-            position=(0, 1.3, 0), scale=(0.8, 0.08, 0.08), billboard=True
+            parent=self, model='cube',
+            position=(0, 3.2, 0), scale=(1.2, 0.1, 0.08), billboard=True
         )
+        _color_entity(self._health_bg, color.rgb(60, 60, 60))
+        self._health_bg.setLightOff()
         self._health_bar = Entity(
-            parent=self, model='cube', color=color.rgb(50, 200, 50),
-            position=(0, 1.3, 0.01), scale=(0.8, 0.06, 0.06), billboard=True
+            parent=self, model='cube',
+            position=(0, 3.2, 0.01), scale=(1.2, 0.08, 0.06), billboard=True
         )
+        _color_entity(self._health_bar, color.rgb(50, 200, 50))
+        self._health_bar.setLightOff()
 
-    def _build_warrior(self):
-        body = Entity(parent=self, model='cube', color=self._player_color,
-                      position=(0, 0.4, 0), scale=(0.4, 0.6, 0.25))
-        head = Entity(parent=self, model='sphere', color=color.peach,
-                      position=(0, 0.85, 0), scale=0.25)
-        helmet = Entity(parent=self, model='sphere', color=color.gray,
-                        position=(0, 0.95, 0), scale=(0.28, 0.15, 0.28))
-        shield = Entity(parent=self, model='cube', color=self._player_color,
-                        position=(-0.35, 0.4, 0), scale=(0.08, 0.5, 0.4))
-        sword = Entity(parent=self, model='cube', color=color.light_gray,
-                       position=(0.3, 0.55, 0), scale=(0.04, 0.4, 0.04))
-        for side in [-0.12, 0.12]:
-            Entity(parent=self, model='cube', color=color.brown,
-                   position=(side, -0.1, 0), scale=(0.12, 0.4, 0.12))
-        self._parts.extend([body, head, helmet, shield, sword])
-
-    def _build_settler(self):
-        body = Entity(parent=self, model='cube', color=color.orange,
-                      position=(0, 0.35, 0), scale=(0.35, 0.5, 0.25))
-        head = Entity(parent=self, model='sphere', color=color.peach,
-                      position=(0, 0.75, 0), scale=0.22)
-        hat = Entity(parent=self, model=_get_cylinder(), color=color.brown,
-                     position=(0, 0.9, 0), scale=(0.25, 0.1, 0.25))
-        cart = Entity(parent=self, model='cube', color=color.brown,
-                      position=(0, 0.2, -0.5), scale=(0.6, 0.35, 0.5))
-        flag = Entity(parent=self, model='cube', color=self._player_color,
-                      position=(0.4, 0.85, -0.5), scale=(0.3, 0.2, 0.02))
-        self._parts.extend([body, head, hat, cart, flag])
-
-    def _build_scout(self):
-        body = Entity(parent=self, model='cube', color=color.lime,
-                      position=(0, 0.35, 0), scale=(0.3, 0.45, 0.2))
-        head = Entity(parent=self, model='sphere', color=color.peach,
-                      position=(0, 0.7, 0), scale=0.2)
-        hood = Entity(parent=self, model=_get_cone(), color=color.olive,
-                      position=(0, 0.75, -0.05), scale=(0.25, 0.2, 0.25))
-        bow = Entity(parent=self, model='cube', color=color.brown,
-                     position=(0, 0.4, -0.18), scale=(0.4, 0.03, 0.03), rotation_z=20)
-        self._parts.extend([body, head, hood, bow])
-
-    def _build_archer(self):
-        body = Entity(parent=self, model='cube', color=self._player_color,
-                      position=(0, 0.4, 0), scale=(0.35, 0.55, 0.22))
-        head = Entity(parent=self, model='sphere', color=color.peach,
-                      position=(0, 0.82, 0), scale=0.23)
-        hood = Entity(parent=self, model=_get_cone(), color=color.rgb(60, 80, 60),
-                      position=(0, 0.9, 0), scale=(0.28, 0.2, 0.28))
-        # Longbow
-        bow_body = Entity(parent=self, model='cube', color=color.brown,
-                          position=(-0.3, 0.5, 0), scale=(0.04, 0.7, 0.04))
-        bow_string = Entity(parent=self, model='cube', color=color.white,
-                            position=(-0.28, 0.5, 0), scale=(0.01, 0.6, 0.01))
-        # Quiver on back
-        quiver = Entity(parent=self, model=_get_cylinder(), color=color.brown,
-                        position=(0.1, 0.5, -0.15), scale=(0.08, 0.35, 0.08),
-                        rotation_x=15)
-        # Arrow tips sticking out
-        Entity(parent=self, model=_get_cone(), color=color.light_gray,
-               position=(0.1, 0.75, -0.15), scale=(0.03, 0.08, 0.03))
-        self._parts.extend([body, head, hood, bow_body, bow_string, quiver])
-
-    def _build_horseman(self):
-        # Horse body
-        horse = Entity(parent=self, model='cube', color=color.rgb(139, 90, 43),
-                       position=(0, 0.25, 0), scale=(0.35, 0.35, 0.7))
-        # Horse head
-        horse_head = Entity(parent=self, model='cube', color=color.rgb(139, 90, 43),
-                            position=(0, 0.4, 0.4), scale=(0.2, 0.25, 0.2),
-                            rotation_x=-30)
-        # Horse legs
-        for lx, lz in [(-0.15, -0.25), (0.15, -0.25), (-0.15, 0.25), (0.15, 0.25)]:
-            Entity(parent=self, model='cube', color=color.rgb(120, 75, 35),
-                   position=(lx, -0.05, lz), scale=(0.08, 0.3, 0.08))
-        # Rider body
-        rider = Entity(parent=self, model='cube', color=self._player_color,
-                       position=(0, 0.6, 0), scale=(0.3, 0.4, 0.2))
-        # Rider head
-        rider_head = Entity(parent=self, model='sphere', color=color.peach,
-                            position=(0, 0.9, 0), scale=0.2)
-        # Lance
-        lance = Entity(parent=self, model=_get_cylinder(), color=color.brown,
-                       position=(0.25, 0.7, 0.2), scale=(0.03, 0.8, 0.03),
-                       rotation_x=-20)
-        lance_tip = Entity(parent=self, model=_get_cone(), color=color.light_gray,
-                           position=(0.25, 1.15, 0.35), scale=(0.06, 0.15, 0.06))
-        self._parts.extend([horse, horse_head, rider, rider_head, lance, lance_tip])
+        # Initialize last_time for animation timing
+        self._last_time = _time.time()
 
     def update_position(self, terrain_height: float):
         """Update unit position with smooth animation."""
@@ -186,157 +154,160 @@ class Unit3D(Entity):
         y = terrain_height + 0.5
         target = Vec3(x, y, z)
 
-        # Animate movement smoothly
-        if (self.position - target).length() > 0.1:
-            self.animate_position(target, duration=0.3)
-        else:
-            self.position = target
+        # Only start animation when the target hex changes (avoid restarting every frame)
+        if (self._move_target - target).length() > 0.05:
+            self._move_target = target
+            self._is_moving = True
+            self._sprite.texture = self._sprite_tex_2  # Show walking frame immediately
+            self.animate_position(target, duration=0.3, curve=lambda t: t)
+        elif self._is_moving:
+            # Check if we've arrived
+            if (self.position - target).length() < 0.05:
+                self.position = target
+                self._is_moving = False
 
     def set_selected(self, selected: bool):
         self._is_selected = selected
         self._selection_ring.visible = selected
         if selected:
-            for part in self._parts:
-                if part.color == self._player_color:
-                    part.color = color.yellow
+            self._sprite.color = Color(1.2, 1.2, 1.0, 1)  # Slight bright tint
         else:
-            for part in self._parts:
-                if part.color == color.yellow:
-                    part.color = self._player_color
+            self._sprite.color = Color(1, 1, 1, 1)  # Normal
 
     def update_display(self):
-        """Update health bar and selection state."""
+        """Update health bar, selection, and walk animation."""
         if self.unit.is_selected != self._is_selected:
             self.set_selected(self.unit.is_selected)
 
-        # Update health bar
+        # Health bar
         hp_pct = max(0, self.unit.health / 100.0)
-        self._health_bar.scale_x = 0.8 * hp_pct
-
-        # Health bar color
+        self._health_bar.scale_x = 1.2 * hp_pct
         if hp_pct > 0.6:
-            self._health_bar.color = color.rgb(50, 200, 50)
+            _color_entity(self._health_bar, color.rgb(50, 200, 50))
         elif hp_pct > 0.3:
-            self._health_bar.color = color.rgb(200, 200, 50)
+            _color_entity(self._health_bar, color.rgb(200, 200, 50))
         else:
-            self._health_bar.color = color.rgb(200, 50, 50)
-
-        # Hide health bar if full
+            _color_entity(self._health_bar, color.rgb(200, 50, 50))
         self._health_bg.visible = self.unit.health < 100
         self._health_bar.visible = self.unit.health < 100
 
+        # Walk animation — cycle frames when moving
+        now = _time.time()
+        if self._is_moving:
+            self._anim_timer += now - self._last_time
+            if self._anim_timer > 0.18:  # Switch frame every 0.18s
+                self._anim_frame = 1 - self._anim_frame  # Toggle 0/1
+                self._sprite.texture = self._sprite_tex_2 if self._anim_frame else self._sprite_tex_1
+                self._anim_timer = 0.0
+        else:
+            # Idle — always show frame 1, subtle bob
+            self._sprite.texture = self._sprite_tex_1
+            self._anim_frame = 0
+            self._anim_timer = 0.0
+            bob = math.sin(now * 2.0 + self.unit.id * 1.7) * 0.04
+            self.y = self._terrain_height + 0.5 + bob
+
+        self._last_time = now
+
 
 class City3D(Entity):
-    """3D city with buildings scaled by population."""
+    """City rendered as a billboard sprite that upgrades with population."""
+
+    # Class-level texture cache
+    _sprite_cache = {}
+
+    @classmethod
+    def _get_sprite(cls, path):
+        if path not in cls._sprite_cache:
+            cls._sprite_cache[path] = load_texture(path)
+        return cls._sprite_cache[path]
+
+    @staticmethod
+    def _get_tier(population):
+        if population >= 5:
+            return 'city'
+        elif population >= 3:
+            return 'town'
+        else:
+            return 'village'
 
     def __init__(self, city: City, terrain_height: float, player_color, **kwargs):
         self.city = city
         self._terrain_height = terrain_height
-        self._parts: List[Entity] = []
-
-        x, _, z = hex_to_world_3d(city.position, HEX_3D_SIZE, 0)
-        y = terrain_height + 0.5
 
         if isinstance(player_color, tuple):
             self._player_color = color.rgb(player_color[0], player_color[1], player_color[2])
         else:
             self._player_color = player_color
 
+        x, _, z = hex_to_world_3d(city.position, HEX_3D_SIZE, 0)
+        y = terrain_height + 0.5
+
         super().__init__(position=(x, y, z), **kwargs)
 
-        self._build_city()
+        # Load all tier textures
+        self._tier_textures = {
+            tier: self._get_sprite(path) for tier, path in CITY_SPRITES.items()
+        }
+        self._current_tier = self._get_tier(city.population)
+
+        # Billboard sprite
+        self._sprite = Entity(
+            parent=self,
+            model='quad',
+            texture=self._tier_textures[self._current_tier],
+            scale=(8.0, 8.0),
+            billboard=True,
+            position=(0, 3.5, 0),
+        )
+        self._sprite.setLightOff()
+        self._sprite.set_transparency(True)
+
+        # Player color base disk on ground
+        self._base_disk = Entity(
+            parent=self, model='circle',
+            scale=(2.5, 2.5, 2.5), rotation_x=90, position=(0, -0.4, 0)
+        )
+        _color_entity(self._base_disk, self._player_color)
+        self._base_disk.setLightOff()
 
         # City name label
         self._name_text = Text(
-            text=city.name, parent=self, position=(0, 3, 0),
+            text=city.name, parent=self, position=(0, 7.5, 0),
             origin=(0, 0), scale=20, billboard=True,
             color=color.white, background=True
         )
 
         # Population badge
         self._pop_bg = Entity(
-            parent=self, model='circle', color=self._player_color,
-            position=(0, 2.5, 0), scale=0.4, rotation_x=90
+            parent=self, model='circle',
+            position=(0, 6.8, 0), scale=0.5, billboard=True
         )
+        _color_entity(self._pop_bg, self._player_color)
+        self._pop_bg.setLightOff()
         self._pop_text = Text(
-            text=str(city.population), parent=self, position=(0, 2.5, 0.01),
+            text=str(city.population), parent=self, position=(0, 6.8, 0.01),
             origin=(0, 0), scale=15, billboard=True, color=color.white
         )
 
         # Capital star
         if city.is_capital:
-            Entity(parent=self, model='diamond', color=color.rgb(255, 215, 0),
-                   position=(0, 3.5, 0), scale=0.3, billboard=True)
-
-    def _build_city(self):
-        pop = self.city.population
-
-        # Town hall
-        center = Entity(parent=self, model='cube', color=self._player_color,
-                        position=(0, 0.4, 0), scale=(1.2, 0.8, 1.2))
-        roof = Entity(parent=self, model=_get_cone(), color=color.brown,
-                      position=(0, 1, 0), scale=(1.4, 0.6, 1.4))
-        tower = Entity(parent=self, model='cube', color=self._player_color,
-                       position=(0, 1.2, 0), scale=(0.3, 0.6, 0.3))
-        tower_top = Entity(parent=self, model=_get_cone(), color=color.brown,
-                           position=(0, 1.7, 0), scale=(0.4, 0.4, 0.4))
-        flag = Entity(parent=self, model='cube', color=self._player_color,
-                      position=(0.15, 2.2, 0), scale=(0.25, 0.15, 0.02))
-        self._parts.extend([center, roof, tower, tower_top, flag])
-
-        # Houses
-        positions = [
-            (-1.2, -0.8), (1.2, -0.8), (-1.2, 0.8), (1.2, 0.8),
-            (-0.6, -1.4), (0.6, -1.4), (-0.6, 1.4), (0.6, 1.4),
-        ]
-        for i in range(min(pop, len(positions))):
-            hx, hz = positions[i]
-            house = Entity(parent=self, model='cube', color=color.white,
-                           position=(hx, 0.25, hz), scale=(0.5, 0.5, 0.5))
-            h_roof = Entity(parent=self, model=_get_cone(), color=color.orange,
-                            position=(hx, 0.65, hz), scale=(0.6, 0.35, 0.6))
-            self._parts.extend([house, h_roof])
-
-        if pop >= 3:
-            self._add_walls()
-        if pop >= 2:
-            self._add_farms()
-
-    def _add_walls(self):
-        wall_color = color.gray
-        walls = [
-            (0, 0.2, -2, 3.5, 0.4, 0.15),
-            (0, 0.2, 2, 3.5, 0.4, 0.15),
-            (-1.75, 0.2, 0, 0.15, 0.4, 4),
-            (1.75, 0.2, 0, 0.15, 0.4, 4),
-        ]
-        for wx, wy, wz, sx, sy, sz in walls:
-            wall = Entity(parent=self, model='cube', color=wall_color,
-                          position=(wx, wy, wz), scale=(sx, sy, sz))
-            self._parts.append(wall)
-
-        for tx, tz in [(-1.75, -2), (1.75, -2), (-1.75, 2), (1.75, 2)]:
-            t = Entity(parent=self, model=_get_cylinder(), color=wall_color,
-                       position=(tx, 0.35, tz), scale=(0.25, 0.7, 0.25))
-            tt = Entity(parent=self, model=_get_cone(), color=color.brown,
-                        position=(tx, 0.85, tz), scale=(0.35, 0.3, 0.35))
-            self._parts.extend([t, tt])
-
-    def _add_farms(self):
-        positions = [(-2.5, -2.5), (2.5, -2.5)]
-        for fx, fz in positions[:min(2, self.city.population - 1)]:
-            field = Entity(parent=self, model='cube', color=color.lime,
-                           position=(fx, 0.01, fz), scale=(1.2, 0.02, 1.2))
-            self._parts.append(field)
-            for row in range(3):
-                crops = Entity(parent=self, model='cube', color=color.yellow,
-                               position=(fx, 0.1, fz - 0.4 + row * 0.4),
-                               scale=(0.8, 0.15, 0.1))
-                self._parts.append(crops)
+            self._capital_star = Entity(
+                parent=self, model='diamond',
+                position=(0, 8.2, 0), scale=0.35, billboard=True
+            )
+            _color_entity(self._capital_star, color.rgb(255, 215, 0))
+            self._capital_star.setLightOff()
 
     def update_display(self):
         self._name_text.text = self.city.name
         self._pop_text.text = str(self.city.population)
+
+        # Switch sprite tier if population changed
+        new_tier = self._get_tier(self.city.population)
+        if new_tier != self._current_tier:
+            self._current_tier = new_tier
+            self._sprite.texture = self._tier_textures[new_tier]
 
 
 class UnitManager3D:
@@ -368,7 +339,9 @@ class UnitManager3D:
         for unit_id in current_ids - existing_ids:
             unit = self.game_state.units[unit_id]
             terrain_height = self.get_terrain_height(unit.position)
-            self.unit_entities[unit_id] = Unit3D(unit, terrain_height, current_player_id)
+            player = self.game_state.get_player(unit.owner_id)
+            civ_id = player.civilization.id if player and player.civilization else 'rome'
+            self.unit_entities[unit_id] = Unit3D(unit, terrain_height, current_player_id, civ_id=civ_id)
 
         for unit_id in current_ids & existing_ids:
             unit = self.game_state.units[unit_id]

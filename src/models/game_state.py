@@ -169,14 +169,16 @@ class GameState:
         # Generate map
         self.game_map = GameMap(seed=map_seed)
 
-        # Create starting settler for human player
+        # Create starting units for human player
         spawn = self.game_map.find_spawn_location()
         if spawn:
             self.create_unit(UnitType.SETTLER, spawn, owner_id=0)
-            # Also give a warrior
             warrior_spawn = self._find_nearby_spawn(spawn)
             if warrior_spawn:
                 self.create_unit(UnitType.WARRIOR, warrior_spawn, owner_id=0)
+                scout_spawn = self._find_nearby_spawn(spawn)
+                if scout_spawn and scout_spawn != warrior_spawn:
+                    self.create_unit(UnitType.SCOUT, scout_spawn, owner_id=0)
 
         # Create AI players
         ai_civ_ids = [k for k in CIVILIZATIONS.keys() if k != civ_id]
@@ -200,9 +202,23 @@ class GameState:
                 ai_warrior_spawn = self._find_nearby_spawn(ai_spawn)
                 if ai_warrior_spawn:
                     self.create_unit(UnitType.WARRIOR, ai_warrior_spawn, owner_id=ai_player.id)
+                    ai_scout_spawn = self._find_nearby_spawn(ai_spawn)
+                    if ai_scout_spawn and ai_scout_spawn != ai_warrior_spawn:
+                        self.create_unit(UnitType.SCOUT, ai_scout_spawn, owner_id=ai_player.id)
+
+        # Explore around all starting units
+        for unit in self.units.values():
+            self.explore_around(unit.position)
 
         self.phase = GamePhase.PLAYING
         self.turn_number = 1
+
+    def explore_around(self, coord: HexCoord, radius: int = 3):
+        """Mark tiles within radius of a coordinate as explored."""
+        for hex_coord in hex_range(coord, radius):
+            tile = self.game_map.get_tile(hex_coord)
+            if tile:
+                tile.explored = True
 
     def _find_nearby_spawn(self, near: HexCoord) -> Optional[HexCoord]:
         """Find a passable tile near the given coordinate."""
@@ -399,7 +415,12 @@ class GameState:
         if target_unit:
             return False
 
-        return unit.move_to(target, self.game_map)
+        moved = unit.move_to(target, self.game_map)
+        if moved:
+            self.explore_around(target)
+            if not unit.can_move:
+                self._auto_select_next_unit()
+        return moved
 
     def attack_unit(self, attacker_id: int, target_coord: HexCoord) -> bool:
         """Attack an enemy unit at the target coordinate."""
@@ -433,6 +454,13 @@ class GameState:
             self.events.append(f"{attacker.name} was destroyed in combat!")
 
         self._check_victory()
+
+        # Auto-select next unit after combat
+        if result['attacker_alive'] and not attacker.can_move:
+            self._auto_select_next_unit()
+        elif not result['attacker_alive']:
+            self._auto_select_next_unit()
+
         return True
 
     def _capture_city(self, attacker: Unit, city: City) -> bool:
@@ -448,11 +476,21 @@ class GameState:
         self.events.append(f"{city.name} captured by {new_owner.name if new_owner else 'unknown'}!")
 
         self._check_victory()
+        self._auto_select_next_unit()
         return True
+
+    def _auto_select_next_unit(self):
+        """Auto-select the next unit that can still move this turn."""
+        units = self.get_current_player_units()
+        movable = [u for u in units if u.can_move and u.id != self.selected_unit_id]
+        if movable:
+            self.select_unit(movable[0].id)
+        else:
+            self.select_unit(None)
 
     def end_turn(self):
         """End the current player's turn."""
-        self.events.clear()
+        # Don't clear events here — let the UI read them first
 
         # End turn for current player's units
         for unit in self.get_current_player_units():
